@@ -1,7 +1,7 @@
 /*
 MIT LICENSE
 
-Copyright 2014 Inertial Sense, LLC - http://inertialsense.com
+Copyright (c) 2014-2019 Inertial Sense, Inc. - http://inertialsense.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files(the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions :
 
@@ -20,18 +20,17 @@ extern "C" {
 #undef _MATH_DEFINES_DEFINED
 #define _MATH_DEFINES_DEFINED
 #include <stdlib.h>
+#include <stdio.h>
 #include <math.h>
 #include <string.h>
 #include <assert.h>
 #include <inttypes.h>
 #include <time.h>
-	
-#define PRE_PROC_COMBINE1(X, Y) X##Y
-#define PRE_PROC_COMBINE(X, Y) PRE_PROC_COMBINE1(X, Y)
 
 #if defined(WIN32) || defined(__WIN32__) || defined(_WIN32)
 
 #define PLATFORM_IS_WINDOWS 1
+#define PLATFORM_IS_EMBEDDED 0
 #ifndef _CRT_SECURE_NO_DEPRECATE
 #define _CRT_SECURE_NO_DEPRECATE
 #endif
@@ -53,6 +52,8 @@ extern "C" {
 #define socket_t int
 
 #define PLATFORM_IS_APPLE 1
+#define PLATFORM_IS_EMBEDDED 0
+
 #if defined(__LITTLE_ENDIAN__)
 #define CPU_IS_LITTLE_ENDIAN 1
 #define CPU_IS_BIG_ENDIAN 0
@@ -70,11 +71,20 @@ extern "C" {
 #endif
 
 #define PLATFORM_IS_LINUX 1
+#define PLATFORM_IS_EMBEDDED 0
 #define socket_t int
 #define CPU_IS_LITTLE_ENDIAN (__BYTE_ORDER == __LITTLE_ENDIAN)
 #define CPU_IS_BIG_ENDIAN (__BYTE_ORDER == __BIG_ENDIAN)
 
-#elif defined(ARM)
+#elif defined(__INERTIAL_SENSE_EVB_2__)
+#define PLATFORM_IS_EMBEDDED 1
+#define PLATFORM_IS_ARM 1
+#define PLATFORM_IS_EVB_2 1
+#define CPU_IS_LITTLE_ENDIAN 1
+#define CPU_IS_BIG_ENDIAN 0
+
+
+#elif defined(ARM) || defined(__SAM3X8E__)
 
 #define PLATFORM_IS_EMBEDDED 1
 #define PLATFORM_IS_ARM 1
@@ -98,29 +108,44 @@ extern "C" {
 
 #error Unknown platform not supported, be sure to set it up here, defining CPU_IS_LITTLE_ENDIAN and CPU_IS_BIG_ENDIAN
 
-#endif
+#endif // platform defines
 
 #if !defined(CPU_IS_LITTLE_ENDIAN) || !defined(CPU_IS_BIG_ENDIAN) || CPU_IS_LITTLE_ENDIAN == CPU_IS_BIG_ENDIAN
 
 #error Unsupported / unknown CPU architecture
 
+#endif // Invalid CPU endianess
+
+
+// "PLATFORM_IS_EMBEDDED" must be defined
+#if !defined(PLATFORM_IS_EMBEDDED) 
+#error "Missing PLATFORM_IS_EMBEDDED macro!!!"
 #endif
 
-#if defined(PLATFORM_IS_EMBEDDED) && PLATFORM_IS_EMBEDDED
+
+#if PLATFORM_IS_EMBEDDED
 
 extern void* pvPortMalloc(size_t xWantedSize);
 extern void vPortFree(void* pv);
 #define MALLOC(m) pvPortMalloc(m)
+#define REALLOC(m, size) 0 // not supported
 #define FREE(m) vPortFree(m)
-#define REALLOC(m, size) while (1) {} // not supported
 
 #else
 
 #define MALLOC(m) malloc(m)
-#define FREE(m) free(m)
 #define REALLOC(m, size) realloc(m, size)
+#define FREE(m) free(m)
 
+#endif 
+
+#if PLATFORM_IS_EMBEDDED
+#include "../hw-libs/printf-master/printf.h"	// Use embedded-safe SNPRINTF
+#define SNPRINTF snprintf_
+#else
+#define SNPRINTF snprintf
 #endif
+
 
 #if defined(_MSC_VER)
 
@@ -132,13 +157,11 @@ extern void vPortFree(void* pv);
 #define SSCANF(src, fmt, ...) sscanf_s(src, fmt, __VA_ARGS__);
 #endif
 
-#ifndef SNPRINTF
-#define SNPRINTF(buf, size, format, ...) _snprintf_s(buf, size, size, format, __VA_ARGS__)
-#endif
-
 #ifndef STRNCPY
 #define STRNCPY(a, b, c) strncpy_s(a, c, b, c);
 #endif
+
+#define strncasecmp _strnicmp 
 
 #else
 
@@ -150,17 +173,24 @@ extern void vPortFree(void* pv);
 #define SSCANF sscanf
 #endif
 
-#ifndef SNPRINTF
-#define SNPRINTF snprintf
-#endif
-
 #ifndef STRNCPY
 #define STRNCPY(a, b, c) strncpy((char*)a, (char*)b, c)
 #endif
 
-#endif
+#endif // defined(_MSC_VER)
 
-#if !defined(PLATFORM_IS_EMBEDDED) || !PLATFORM_IS_EMBEDDED
+#if defined(PLATFORM_IS_EVB_2)
+#define _MKDIR(dir) f_mkdir(dir)
+#define _RMDIR(dir) f_unlink(dir)
+#define _GETCWD(buf, len) f_getcwd(buf, len)
+
+#elif !PLATFORM_IS_EMBEDDED
+#define BEGIN_CRITICAL_SECTION
+#define END_CRITICAL_SECTION
+#define DBGPIO_ENABLE(pin)
+#define DBGPIO_START(pin)
+#define DBGPIO_END(pin)
+#define DBGPIO_TOGGLE(pin)
 
 #if PLATFORM_IS_WINDOWS
 
@@ -172,7 +202,7 @@ extern void vPortFree(void* pv);
 #define _UTIME _utime
 #define _UTIMEBUF struct _utimbuf
 
-#else
+#else // POSIX
 
 #include <unistd.h>
 #include <dirent.h>
@@ -207,6 +237,21 @@ extern void vPortFree(void* pv);
 
 // #define PACKED_STRUCT typedef struct PACKED
 // #define PACKED_UNION typedef union PACKED
+
+#ifndef RAMFUNC
+
+/* Define RAMFUNC attribute */
+#if defined   ( __CC_ARM   ) /* Keil uVision 4 */
+#   define RAMFUNC __attribute__ ((section(".ramfunc")))
+#elif defined ( __ICCARM__ ) /* IAR Ewarm 5.41+ */
+#   define RAMFUNC __ramfunc
+#elif defined (  __GNUC__  ) /* GCC CS3 2009q3-68 */
+#   define RAMFUNC __attribute__ ((section(".ramfunc")))
+#else
+#	define RAMFUNC
+#endif
+
+#endif
 
 #ifndef UNMASK
 #define UNMASK(_word, _prefix) (((_word) & (_prefix##_MASK)) >> (_prefix##_SHIFT))
@@ -285,6 +330,20 @@ extern void vPortFree(void* pv);
 #define MEMBERSIZE(type, member) sizeof(((type*)0)->member)
 #endif
 
+#ifndef MEMBER_ITEM_SIZE
+#define MEMBER_ITEM_SIZE(type, member) sizeof(((type*)NULL)->member[0])
+#endif
+
+/* equivalent to `offsetof(type, member[i])`, but does not require that `i` is a constant expression.*/
+#ifndef OFFSET_OF_MEMBER_INDEX
+#define OFFSET_OF_MEMBER_INDEX(type, member, i) (offsetof(type, member) + (i) * MEMBER_ITEM_SIZE(type, member))
+#endif
+
+/* equivalent to `offsetof(type, member[i].submember)`, but does not require that `i` is a constant expression. */
+#ifndef OFFSET_OF_MEMBER_INDEX_SUBMEMBER
+#define OFFSET_OF_MEMBER_INDEX_SUBMEMBER(type, member, i, submember) (offsetof(type, member[0].submember) + (i) * MEMBER_ITEM_SIZE(type, member))
+#endif
+
 #ifndef STRINGIFY
 #define STRINGIFY(x) #x
 #endif
@@ -315,8 +374,8 @@ extern void vPortFree(void* pv);
 
 #if ((defined(_MSC_VER) && _MSC_VER >= 1900) || (defined(__cplusplus) && ((__cplusplus >= 201103L || (__cplusplus < 200000 && __cplusplus > 199711L)))))
 
-#ifndef C11_IS_ENABLED
-#define C11_IS_ENABLED 1
+#ifndef CPP11_IS_ENABLED
+#define CPP11_IS_ENABLED 1
 #endif
 #ifndef CONST_EXPRESSION
 #define CONST_EXPRESSION constexpr static
@@ -336,22 +395,25 @@ extern void vPortFree(void* pv);
 
 #else
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wunused-local-typedefs"
-#endif
+// #if defined(__GNUC__)
+// #pragma GCC diagnostic push
+// #pragma GCC diagnostic ignored "-Wunused-local-typedefs"
+// #endif
 
-#ifndef C11_IS_ENABLED
-#define C11_IS_ENABLED 0
+#ifndef CPP11_IS_ENABLED
+#define CPP11_IS_ENABLED 0
 #endif
 #ifndef CONST_EXPRESSION
 #define CONST_EXPRESSION static const
 #endif
+#define PRE_PROC_COMBINE(X, Y) X##Y
 #ifndef STATIC_ASSERT
-#define STATIC_ASSERT(exp) typedef char PRE_PROC_COMBINE(STATIC_ASSERT_FAILED_, __LINE__)[(exp) ? 1 : -1]
+// #define STATIC_ASSERT(exp) typedef char PRE_PROC_COMBINE(STATIC_ASSERT_FAILED_, __LINE__)[(exp) ? 1 : -1]
+#define STATIC_ASSERT(exp) static_assert(exp, "STATIC ASSERT FAILED!")
 #endif
 #ifndef STATIC_ASSERT_MSG
-#define STATIC_ASSERT_MSG(exp, msg) typedef char PRE_PROC_COMBINE(msg, __LINE__)[(exp) ? 1 : -1]
+// #define STATIC_ASSERT_MSG(exp, msg) typedef char PRE_PROC_COMBINE(msg, __LINE__)[(exp) ? 1 : -1]
+#define STATIC_ASSERT_MSG(exp, msg) static_assert(exp, msg)
 #endif
 #ifndef OVERRIDE
 #define OVERRIDE
@@ -360,16 +422,25 @@ extern void vPortFree(void* pv);
 #define NULLPTR 0
 #endif
 
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+// #if defined(__GNUC__)
+// #pragma GCC diagnostic pop
+// #endif
 
 #endif
 
+
+//////////////////////////////////////////////////////////////////////////
+// Time
 // diff two times as uint32_t, handling wrap-around
 #define UINT32_TIME_DIFF(current, prev) ((uint32_t)(current) - (uint32_t)(prev))
 
 #define DT_TO_HZ(dt)	(((dt) == (0.0)) ? (0) : (1.0/dt))
+
+#define C_WEEKS_TO_SECONDS        604800.0      // Seconds per week
+#define C_WEEKS_TO_MILLISECONDS   604800000     // Milliseconds per week
+
+//////////////////////////////////////////////////////////////////////////
+// Distance
 
 #define C_IN2M          0.0254          // inches to meters 
 #define C_FT2M          0.3048          // (C_IN2M*12) feet to meters 
@@ -390,6 +461,7 @@ extern void vPortFree(void* pv);
 #define C_MI2M_F        1609.344f       // (C_FT2M*5280) miles to meters 
 
 #define C_METERS_KNOTS	1.943844		// Meters/sec squared to knots
+#define C_METERS_KNOTS_F 1.943844f		// Meters/sec squared to knots
 
 //////////////////////////////////////////////////////////////////////////
 // Acceleration / Force
@@ -448,14 +520,12 @@ extern void vPortFree(void* pv);
 // Math constants 
 // from CRC Standard Mathematical Tables, 27th edition, 1984 
 
-#define C_PI            3.14159265358979323846264338327950288419716939937511
 #define C_ROOT2         1.41421356237309504880168872420969807856967187537695
 #define C_ROOT3         1.73205080756887729352744634150587236694280525381039
 #define C_E             2.71828182845904523536028747135266249775724709369996
 
 #define C_DIVROOT2      0.70710678118654752440084436210485
 
-#define C_PI_F          3.14159265358979323846264338327950288419716939937511f
 #define C_ROOT2_F       1.41421356237309504880168872420969807856967187537695f
 #define C_ROOT3_F       1.73205080756887729352744634150587236694280525381039f
 #define C_E_F           2.71828182845904523536028747135266249775724709369996f
@@ -464,6 +534,7 @@ extern void vPortFree(void* pv);
 #define C_PIDIV8        0.39269908169872415480783042290994		// 22.5 deg
 #define C_PIDIV4        0.78539816339744830961566084581988
 #define C_PIDIV2        1.5707963267948966192313216916398
+#define C_PI            3.14159265358979323846264338327950288419716939937511
 #define C_TWOPI         6.283185307179586476925286766559
 #define C_DIVTWOPI      0.15915494309189533576888376337251
 #define C_DIVPI         0.31830988618379067153776752674503
@@ -472,6 +543,7 @@ extern void vPortFree(void* pv);
 #define C_PIDIV8_F      0.39269908169872415480783042290994f		// 22.5 deg
 #define C_PIDIV4_F      0.78539816339744830961566084581988f		// 45 deg
 #define C_PIDIV2_F      1.5707963267948966192313216916398f		// 90 deg
+#define C_PI_F          3.14159265358979323846264338327950288419716939937511f	// 180 deg
 #define C_TWOPI_F       6.283185307179586476925286766559f		// 360 deg
 #define C_DIVTWOPI_F    0.15915494309189533576888376337251f
 #define C_DIVPI_F       0.31830988618379067153776752674503f
@@ -674,14 +746,14 @@ extern void vPortFree(void* pv);
 #define C_135p0_DEG2RAD_F			2.3561944901923400f
 #define C_180p0_DEG2RAD_F			3.1415926535897900f
 
-#ifndef UNWRAP_F64
-#define UNWRAP_F64(x)			{while( (x) > (C_PI) )   (x) -= (C_TWOPI);   while( (x) < (-C_PI) )   (x) += (C_TWOPI);}	// unwrap to +- PI
-#endif
-
-#ifndef UNWRAP_F
-#define UNWRAP_F(x)				{while( (x) > (C_PI_F) ) (x) -= (C_TWOPI_F); while( (x) < (-C_PI_F) ) (x) += (C_TWOPI_F);}	// unwrap to +- PI
-#endif
-
+// Angle Unwrap
+#define UNWRAP_DEG_F64(x)			{ if((x) < (-180.0 )) { (x) += (360.0 );    } if((x) > (180.0 ))    { (x) -= (360.0 );    } }	// unwrap to +- 180
+#define UNWRAP_DEG_F32(x)			{ if((x) < (-180.0f)) { (x) += (360.0f);    } if((x) > (180.0f))    { (x) -= (360.0f);    } }	// unwrap to +- 180
+#define UNWRAP_F64(x)				{ if((x) < (-C_PI))   { (x) += (C_TWOPI);   } if((x) > (C_PI))      { (x) -= (C_TWOPI);   } }	// unwrap to +- PI
+#define UNWRAP_F32(x)				{ if((x) < (-C_PI_F)) { (x) += (C_TWOPI_F); } if((x) > (C_PI_F))    { (x) -= (C_TWOPI_F); } }	// unwrap to +- PI
+#define UNWRAP_ZERO_TWOPI_F64(x)	{ if((x) < (0.0))     { (x) += (C_TWOPI);   } if((x) > (C_TWOPI))   { (x) -= (C_TWOPI);   } }	// unwrap to 0 to TWOPI
+#define UNWRAP_ZERO_TWOPI_F32(x)	{ if((x) < (0.f))     { (x) += (C_TWOPI_F); } if((x) > (C_TWOPI_F)) { (x) -= (C_TWOPI_F); } }	// unwrap to 0 to TWOPI
+	
 #define _SIN        sinf
 #define _COS        cosf
 #define _TAN        tanf
@@ -696,14 +768,12 @@ extern void vPortFree(void* pv);
 #define _RAD2DEG    C_RAD2DEG_F
 #define _ZERO		0.0f
 
-#define _UNWRAP     UNWRAP_F
-
 #define FLOAT2DOUBLE (double) // Used to prevent warning when compiling with -Wdouble-promotion in Linux
 
 typedef float       f_t;
 typedef int			i_t;
-typedef double      Vector2d[3];    // V = | 0 1 |
-typedef f_t         Vector2[3];     // V = | 0 1 |
+typedef double      Vector2d[2];    // V = | 0 1 |
+typedef f_t         Vector2[2];     // V = | 0 1 |
 typedef double      Vector3d[3];    // V = | 0 1 2 |
 typedef f_t         Vector3[3];     // V = | 0 1 2 |
 typedef double      Vector4d[4];    // V = | 0 1 2 3 |
@@ -716,6 +786,7 @@ typedef f_t         Matrix2[4];
 typedef f_t         Matrix3[9];
 typedef f_t         Matrix4[16];
 typedef f_t         Matrix5[25];
+typedef double      Matrix3d[9];
 
 #ifdef __cplusplus
 } // extern "C"

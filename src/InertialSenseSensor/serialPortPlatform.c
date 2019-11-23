@@ -1,7 +1,7 @@
 /*
 MIT LICENSE
 
-Copyright 2014 Inertial Sense, LLC - http://inertialsense.com
+Copyright (c) 2014-2019 Inertial Sense, Inc. - http://inertialsense.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files(the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions :
 
@@ -314,15 +314,12 @@ static int serialPortOpenPlatform(serial_port_t* serialPort, const char* port, i
         serialPortClose(serialPort);
         return 0;
     }
-
     COMMTIMEOUTS timeouts = { (blocking ? 1 : MAXDWORD), (blocking ? 1 : 0), (blocking ? 1 : 0), 0, 0 };
     if (!SetCommTimeouts(platformHandle, &timeouts))
     {
         serialPortClose(serialPort);
         return 0;
     }
-	SetupComm(platformHandle, 16384, 16384);
-
     serialPortHandle* handle = (serialPortHandle*)calloc(sizeof(serialPortHandle), 1);
     handle->blocking = blocking;
     handle->platformHandle = platformHandle;
@@ -476,17 +473,13 @@ static int serialPortReadTimeoutPlatformWindows(serialPortHandle* handle, unsign
                 CancelIo(handle->platformHandle);
             }
         }
-		else
-		{
-
-#if _DEBUG
-
-			DWORD dRes = GetLastError();
-			int a = 5; a++;
-
-#endif
-
-		}
+// #if _DEBUG
+// 		else
+// 		{
+// 			DWORD dRes = GetLastError();
+// 			int a = 5; a++;
+// 		}
+// #endif
         if (!handle->blocking && totalRead < readCount && timeoutMilliseconds > 0)
         {
             Sleep(1);
@@ -580,13 +573,13 @@ static int serialPortAsyncReadPlatform(serial_port_t* serialPort, unsigned char*
 
 #if PLATFORM_IS_WINDOWS
 
-    readFileExCompletionStruct* c = (readFileExCompletionStruct*)malloc(sizeof(readFileExCompletionStruct));
-    c->externalCompletion = completion;
-    c->serialPort = serialPort;
-    c->buffer = buffer;
-    memset(&c->ov, 0, sizeof(c->ov));
+	readFileExCompletionStruct c;
+	c.externalCompletion = completion;
+    c.serialPort = serialPort;
+    c.buffer = buffer;
+    memset(&(c.ov), 0, sizeof(c.ov));
 
-    if (!ReadFileEx(handle->platformHandle, buffer, readCount, (LPOVERLAPPED)c, readFileExCompletion))
+    if (!ReadFileEx(handle->platformHandle, buffer, readCount, (LPOVERLAPPED)&c, readFileExCompletion))
     {
         return 0;
     }
@@ -648,14 +641,14 @@ static int serialPortWritePlatform(serial_port_t* serialPort, const unsigned cha
     return count;
     */
 
+	if (serialPort->pfnWrite)
+	{
+		return serialPort->pfnWrite(serialPort, buffer, writeCount);
+	}
+	return 0;
+
 #endif
 
-    if (serialPort->pfnWrite)
-    {
-        return serialPort->pfnWrite(serialPort, buffer, writeCount);
-    }
-
-    return 0;
 }
 
 static int serialPortGetByteCountAvailableToReadPlatform(serial_port_t* serialPort)
@@ -699,10 +692,8 @@ static int serialPortGetByteCountAvailableToWritePlatform(serial_port_t* serialP
     */
 }
 
-static int serialPortSleepPlatform(serial_port_t* serialPort, int sleepMilliseconds)
+static int serialPortSleepPlatform(int sleepMilliseconds)
 {
-    (void)serialPort;
-
 #if PLATFORM_IS_WINDOWS
 
     Sleep(sleepMilliseconds);

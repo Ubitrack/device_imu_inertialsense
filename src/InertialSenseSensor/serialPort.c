@@ -1,7 +1,7 @@
 /*
 MIT LICENSE
 
-Copyright 2014 Inertial Sense, LLC - http://inertialsense.com
+Copyright (c) 2014-2019 Inertial Sense, Inc. - http://inertialsense.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files(the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions :
 
@@ -27,20 +27,31 @@ void serialPortSetPort(serial_port_t* serialPort, const char* port)
 
 int serialPortOpen(serial_port_t* serialPort, const char* port, int baudRate, int blocking)
 {
-	if (serialPort == 0 || port == 0)
+    if (serialPort == 0 || port == 0 || serialPort->pfnOpen == 0)
 	{
 		return 0;
 	}
-	else if (serialPort->pfnOpen != 0)
-	{
-		if (!serialPort->pfnOpen(serialPort, port, baudRate, blocking))
-		{
-			serialPortClose(serialPort);
-			return 0;
-		}
-		return 1;
-	}
-	return 0;
+    return serialPort->pfnOpen(serialPort, port, baudRate, blocking);
+}
+
+int serialPortOpenRetry(serial_port_t* serialPort, const char* port, int baudRate, int blocking)
+{
+    if (serialPort == 0 || port == 0 || serialPort->pfnOpen == 0)
+    {
+        return 0;
+    }
+
+    serialPortClose(serialPort);
+    for (int retry = 0; retry < 30; retry++)
+    {
+        if (serialPortOpen(serialPort, port, baudRate, blocking))
+        {
+            return 1;
+        }
+        serialPortSleep(serialPort, 100);
+    }
+    serialPortClose(serialPort);
+    return 0;
 }
 
 int serialPortIsOpen(serial_port_t* serialPort)
@@ -124,7 +135,7 @@ int serialPortReadLineTimeout(serial_port_t* serialPort, unsigned char* buffer, 
 		{
 			// remove \r\n and null terminate and return count of chars
 			buffer[bufferIndex -= 2] = '\0';
-			return ++bufferIndex;
+			return bufferIndex;
 		}
 		prevCR = (c == '\r');
 	}
@@ -157,7 +168,7 @@ int serialPortReadAsciiTimeout(serial_port_t* serialPort, unsigned char* buffer,
 		int existingChecksum;
 
 		// calculate checksum, skipping leading $ and trailing *XX\r\n
-		unsigned char* ptrEndNoChecksum = ptrEnd - 4;
+		unsigned char* ptrEndNoChecksum = ptrEnd - 3;
 		while (++ptr < ptrEndNoChecksum)
 		{
 			checksum ^= *ptr;
@@ -166,8 +177,7 @@ int serialPortReadAsciiTimeout(serial_port_t* serialPort, unsigned char* buffer,
 		if (*ptr == '*')
 		{
 			// read checksum from buffer, skipping the * char
-			sscanf((void*)++ptr, "%2x", (unsigned int*)&existingChecksum);
-
+			existingChecksum = strtol((void*)++ptr, NULL, 16);
 			if (existingChecksum == checksum)
 			{
 				return count;
@@ -213,7 +223,7 @@ int serialPortWriteLine(serial_port_t* serialPort, const unsigned char* buffer, 
 	}
 
 	int count = serialPortWrite(serialPort, buffer, writeCount);
-	count += serialPortWrite(serialPort, (unsigned char[2]) { '\r', '\n' }, 2);
+	count += serialPortWrite(serialPort, (unsigned char*)"\r\n", 2);
 	return count;
 }
 
@@ -254,8 +264,8 @@ int serialPortWriteAscii(serial_port_t* serialPort, const char* buffer, int buff
 #pragma warning(disable: 4996)
 
 #endif
-	//snprintf
-	_snprintf_c((char*)buf, sizeof(buf), "*%.2x\r\n", checkSum);
+
+	snprintf((char*)buf, sizeof(buf), "*%.2x\r\n", checkSum);
 
 #ifdef _MSC_VER
 
@@ -338,10 +348,10 @@ int serialPortGetByteCountAvailableToWrite(serial_port_t* serialPort)
 
 int serialPortSleep(serial_port_t* serialPort, int sleepMilliseconds)
 {
-	if (serialPort == 0 || serialPort->handle == 0 || serialPort->pfnSleep == 0)
+	if (serialPort == 0 || serialPort->pfnSleep == 0)
 	{
 		return 0;
 	}
 
-	return serialPort->pfnSleep(serialPort, sleepMilliseconds);
+	return serialPort->pfnSleep(sleepMilliseconds);
 }

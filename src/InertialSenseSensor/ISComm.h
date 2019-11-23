@@ -1,7 +1,7 @@
 /*
 MIT LICENSE
 
-Copyright 2014 Inertial Sense, LLC - http://inertialsense.com
+Copyright (c) 2014-2019 Inertial Sense, Inc. - http://inertialsense.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files(the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions :
 
@@ -52,13 +52,15 @@ extern "C" {
 #define _DID_IMU_PREINTEGRATED_IMU	DID_PREINTEGRATED_IMU	/** (see preintegrated_imu_t) Dual IMU output: Conning and sculling integrated at IMU update rate. */	
 
 /** GPS */
-#define _DID_GPS_NAV				DID_GPS_NAV				/** (see gps_nav_t) GPS output */
+#define _DID_GPS1_POS				DID_GPS1_POS			/** (see gps_pos_t) GPS output */
 
 /** Magnetometer, Barometer, and other Sensor */
 #define _DID_MAG_CAL				DID_MAG_CAL				/** (see mag_cal_t) Magnetometer calibration */
 #define _DID_MAGNETOMETER_1			DID_MAGNETOMETER_1		/** (see magnetometer_t) Magnetometer sensor 1 output */
 #define _DID_MAGNETOMETER_2			DID_MAGNETOMETER_2		/** (see magnetometer_t) Magnetometer sensor 2 output */
 #define _DID_BAROMETER				DID_BAROMETER			/** (see barometer_t) Barometric pressure sensor data */
+#define _DID_WHEEL_ENCODER			DID_WHEEL_ENCODER		/** (see wheel_encoder_t) Wheel encoder sensor data */
+#define _DID_POS_MEASUREMENT		DID_POSITION_MEASUREMENT/** (see pos_measurement_t) Position Measurement data*/
 
 /** Utilities */
 #define _DID_DEV_INFO				DID_DEV_INFO			/** (see dev_info_t) Device information */
@@ -67,9 +69,11 @@ extern "C" {
 
 /** Configuration */
 #define _DID_FLASH_CONFIG			DID_FLASH_CONFIG 		/** (see nvm_flash_cfg_t) Flash memory configuration */
+#define _DID_RMC					DID_RMC					/** (see rmc_t) Realtime message controller */
 
 /** External data identifier */
-#define _DID_EXTERNAL				0xFFFFFFFF				
+#define _DID_EXTERNAL				0xFFFFFFFF
+#define _DID_GET_DATA				0x7FFFFFFF              /** Request for a DID data set to be sent in response */
 
 #define EXTERNAL_DATA_ID_UBLOX UBLOX_START_BYTE1
 #define EXTERNAL_DATA_ID_RTCM3 RTCM3_START_BYTE
@@ -113,6 +117,13 @@ typedef struct
 
     /** Size of last data id received. Internal state, do not modify */
 	uint32_t dataSize;
+
+    /** Packet counter value */
+    uint32_t pktCounter;
+
+    /** Acknowledge packet needed in response to the last packet received */
+    uint32_t ackNeeded;
+    
 } is_comm_instance_t;
 
 /**
@@ -138,11 +149,11 @@ uint32_t is_comm_parse(is_comm_instance_t* instance, uint8_t byte);
 * @param dataId the data id to request (see DID_* at top of this file)
 * @param offset the offset into data to request. 0 offset and length for entire data structure.
 * @param length the length into data from offset to request. 0 offset and length for entire data structure.
-* @param periodMS how often you want the data to stream out, 0 for a one time message, 0xFFFFFFFF to turn off
+* @param periodMultiple how often you want the data to stream out, 0 for a one time message and turn off.
 * @return the number of bytes written to the comm buffer (from is_comm_init), will be less than 1 if error
 * @remarks pass an offset and length of 0 to request the entire data structure
 */
-int is_comm_get_data(is_comm_instance_t* instance, uint32_t dataId, uint32_t offset, uint32_t size, uint32_t periodMS);
+int is_comm_get_data(is_comm_instance_t* instance, uint32_t dataId, uint32_t offset, uint32_t size, uint32_t periodMultiple);
 
 /**
 * Encode a binary packet to get predefined list of data sets from the device - puts the data ready to send into the buffer passed into is_comm_init
@@ -154,7 +165,7 @@ int is_comm_get_data(is_comm_instance_t* instance, uint32_t dataId, uint32_t off
 int is_comm_get_data_rmc(is_comm_instance_t* instance, uint64_t rmcBits);
 
 /**
-* Encode a binary packet to set data on the device - puts the data ready to send into the buffer passed into is_comm_init
+* Encode a binary packet to set data on the device - puts the data ready to send into the buffer passed into is_comm_init.  An acknowledge packet is sent in response to this packet. 
 * @param instance the comm instance passed to is_comm_init
 * @param dataId the data id to set on the device (see DID_* at top of this file)
 * @param offset the offset to start setting data at on the data structure on the device
@@ -166,14 +177,26 @@ int is_comm_get_data_rmc(is_comm_instance_t* instance, uint64_t rmcBits);
 int is_comm_set_data(is_comm_instance_t* instance, uint32_t dataId, uint32_t offset, uint32_t size, void* data);
 
 /**
-* Encode a binary packet to stop all messages being broadcast on the device - puts the data ready to send into the buffer passed into is_comm_init
+* Same as is_comm_set_data() except NO acknowledge packet is sent in response to this packet. 
+*/
+int is_comm_data(is_comm_instance_t* instance, uint32_t dataId, uint32_t offset, uint32_t size, void* data);
+
+/**
+* Encode a binary packet to stop all messages being broadcast on the device on all ports - puts the data ready to send into the buffer passed into is_comm_init
 * @param instance the comm instance passed to is_comm_init
 * @return 0 if success, otherwise an error code
 */
-int is_comm_stop_broadcasts(is_comm_instance_t* instance);
+int is_comm_stop_broadcasts_all_ports(is_comm_instance_t* instance);
+
+/**
+* Encode a binary packet to stop all messages being broadcast on the device on this port - puts the data ready to send into the buffer passed into is_comm_init
+* @param instance the comm instance passed to is_comm_init
+* @return 0 if success, otherwise an error code
+*/
+int is_comm_stop_broadcasts_current_port(is_comm_instance_t* instance);
 
 /** uINS default baud rate */
-#define IS_COM_BAUDRATE_DEFAULT IS_BAUDRATE_3000000
+#define IS_COM_BAUDRATE_DEFAULT IS_BAUDRATE_921600
 
 /** The maximum allowable dataset size */
 #define MAX_DATASET_SIZE        1024
@@ -216,9 +239,6 @@ int is_comm_stop_broadcasts(is_comm_instance_t* instance);
 
 #define UBLOX_HEADER_SIZE 6
 #define RTCM3_HEADER_SIZE 3
-
-/** Maximum number of messages that may be broadcast simultaneously */
-#define MAX_NUM_BCAST_MSGS 16
 
 /** We must not allow any packing or shifting as these data structures must match exactly in memory on all devices */
 PUSH_PACK_1
@@ -263,38 +283,19 @@ n-3			Checksum high byte
 n-2			Checksum low byte
 n-1			Packet end byte
 */
-typedef enum
-{
-	/** Invalid packet id */
-	PID_INVALID = 0,
 
-	/** ACK */
-	PID_ACK,
-
-	/** NACK */
-	PID_NACK,
-
-	/** Request for data to be broadcast, response is PID_DATA. See data structures for list of possible broadcast data. */
-	PID_GET_DATA,
-
-	/** Data received from PID_GET_DATA, no ACK is sent back */
-	PID_DATA,
-
-	/** Set data on the device, such as configuration options, sends an ACK back */
-	PID_SET_DATA,
-
-	/** Stop all data broadcasts on all ports. Responds with an ACK */
-	PID_STOP_ALL_BROADCASTS,
-
-	/** Stop a specific broadcast */
-	PID_STOP_DID_BROADCAST,
-
-	/** The number of packet identifiers, keep this at the end! */
-	PID_COUNT,
-
-	/** The maximum count of packet identifiers, 0x1F (PACKET_INFO_ID_MASK) */
-	PID_MAX_COUNT = 32
-} pkt_info_byte_t;
+	
+#define PID_INVALID                         0   /** Invalid packet id */
+#define PID_ACK                             1   /** (ACK) received valid packet */
+#define PID_NACK                            2   /** (NACK) received invalid packet */
+#define PID_GET_DATA                        3   /** Request for data to be broadcast, response is PID_DATA. See data structures for list of possible broadcast data. */
+#define PID_DATA                            4   /** Data received from PID_GET_DATA, no ACK is sent back */
+#define PID_SET_DATA                        5   /** Set data on the device, such as configuration options, sends an ACK back */
+#define PID_STOP_BROADCASTS_ALL_PORTS       6   /** Stop all data broadcasts on all ports. Responds with an ACK */
+#define PID_STOP_DID_BROADCAST              7   /** Stop a specific broadcast */
+#define PID_STOP_BROADCASTS_CURRENT_PORT    8   /** Stop all data broadcasts on current port. Responds with an ACK */
+#define PID_COUNT                           9   /** The number of packet identifiers, keep this at the end! */
+#define PID_MAX_COUNT                       32  /** The maximum count of packet identifiers, 0x1F (PACKET_INFO_ID_MASK) */
 
 /** Represents size number of bytes in memory, up to a maximum of PKT_BUF_SIZE */
 typedef struct
@@ -346,7 +347,7 @@ typedef enum
 } asciiDataType;
 
 /** create a uint from an ASCII message id that is the same, regardless of CPU architecture */
-#define ASCII_MESSAGEID_TO_UINT(c4) ((uint32_t)c4[0] << 24 | ((uint32_t)c4[1] << 16) | ((uint32_t)c4[2] << 8) | ((uint32_t)c4[3]))
+#define ASCII_MESSAGEID_TO_UINT(c4) ((uint32_t)(c4)[0] << 24 | ((uint32_t)(c4)[1] << 16) | ((uint32_t)(c4)[2] << 8) | ((uint32_t)(c4)[3]))
 
 enum ePktHdrFlags
 {
@@ -512,10 +513,10 @@ typedef struct
 	uint32_t            offset;
 
 	/**
-	The broadcast period in milliseconds, or 0 for a one-time broadcast. Depending on data size and baud/transfer rates,
+	The broadcast source period multiples, or 0 for a one-time broadcast. Depending on data size and baud/transfer rates,
 	some data may be dropped if this period is too short.
 	*/
-	uint32_t            bc_period_ms;
+	uint32_t            bc_period_multiple;
 } p_data_get_t;
 
 /** Represents the body of a disable broadcast for data id packet */
@@ -556,19 +557,10 @@ int is_encode_binary_packet(void* srcBuffer, unsigned int srcBufferLength, packe
 int is_decode_binary_packet(packet_t *pkt, unsigned char* pbuf, int pbufSize);
 int is_decode_binary_packet_byte(uint8_t** _ptrSrc, uint8_t** _ptrDest, uint32_t* checksum, uint32_t shift);
 void is_decode_binary_packet_footer(packet_ftr_t* ftr, uint8_t* ptrSrc, uint8_t** ptrSrcEnd, uint32_t* checksum);
-
-#if defined(RTK_EMBEDDED)
-
-// include rtklib.h yourself elsewhere
-#define calculate24BitCRCQ rtk_crc24q
-#define getBitsAsUInt32 getbitu
-
-#else
+void is_enable_packet_encoding(int enabled); // default is enabled
 
 unsigned int calculate24BitCRCQ(unsigned char* buffer, unsigned int len);
 unsigned int getBitsAsUInt32(const unsigned char* buffer, unsigned int pos, unsigned int len);
-
-#endif
 
 /** Copies packet data into a data structure.  Returns 0 on success, -1 on failure. */
 char copyDataPToStructP(void *sptr, const p_data_t *data, const unsigned int maxsize);
@@ -576,6 +568,8 @@ char copyDataPToStructP(void *sptr, const p_data_t *data, const unsigned int max
 /** Copies packet data into a data structure.  Returns 0 on success, -1 on failure. */
 char copyDataPToStructP2(void *sptr, const p_data_hdr_t *dataHdr, const uint8_t *dataBuf, const unsigned int maxsize);
 
+/** Copies is_comm_instance data into a data structure.  Returns 0 on success, -1 on failure. */
+char is_comm_copy_to_struct(void *sptr, const is_comm_instance_t *com, const unsigned int maxsize);
 
 #ifdef __cplusplus
 }

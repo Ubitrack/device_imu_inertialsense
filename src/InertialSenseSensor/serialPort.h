@@ -1,7 +1,7 @@
 /*
 MIT LICENSE
 
-Copyright 2014 Inertial Sense, LLC - http://inertialsense.com
+Copyright (c) 2014-2019 Inertial Sense, Inc. - http://inertialsense.com
 
 Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files(the "Software"), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions :
 
@@ -58,7 +58,7 @@ typedef int(*pfnSerialPortClose)(serial_port_t* serialPort);
 typedef int(*pfnSerialPortFlush)(serial_port_t* serialPort);
 typedef int(*pfnSerialPortGetByteCountAvailableToRead)(serial_port_t* serialPort);
 typedef int(*pfnSerialPortGetByteCountAvailableToWrite)(serial_port_t* serialPort);
-typedef int(*pfnSerialPortSleep)(serial_port_t* serialPort, int sleepMilliseconds);
+typedef int(*pfnSerialPortSleep)(int sleepMilliseconds);
 
 // Allows communicating over a serial port
 struct serial_port_t
@@ -117,6 +117,14 @@ void serialPortSetPort(serial_port_t* serialPort, const char* port);
 // returns 1 if success, 0 if failure
 int serialPortOpen(serial_port_t* serialPort, const char* port, int baudRate, int blocking);
 
+// open a serial port with retry
+// port is null terminated, i.e. COM1\0, COM2\0, etc.
+// use blocking = 0 when data is being streamed from the serial port rapidly and blocking = 1 for
+// uses such as a boot loader where a write would then require n bytes to be read in a single operation.
+// blocking simply determines the default timeout value of the serialPortRead function
+// returns 1 if success, 0 if failure
+int serialPortOpenRetry(serial_port_t* serialPort, const char* port, int baudRate, int blocking);
+
 // check if the port is open
 // returns 1 if open, 0 if not open
 int serialPortIsOpen(serial_port_t* serialPort);
@@ -142,12 +150,12 @@ int serialPortReadTimeoutAsync(serial_port_t* serialPort, unsigned char* buffer,
 
 // read up until a \r\n sequence has been read
 // buffer will not contain \r\n sequence
-// returns number of bytes read or -1 if timeout or buffer overflow
+// returns number of bytes read or -1 if timeout or buffer overflow, count does not include the null terminator
 int serialPortReadLine(serial_port_t* serialPort, unsigned char* buffer, int bufferLength);
 
 // read up until a \r\n sequence has been read
 // result will not contain \r\n sequence
-// returns number of bytes read or -1 if timeout or buffer overflow
+// returns number of bytes read or -1 if timeout or buffer overflow, count does not include the null terminator
 int serialPortReadLineTimeout(serial_port_t* serialPort, unsigned char* buffer, int bufferLength, int timeoutMilliseconds);
 
 // read ASCII data (starts with $ and ends with \r\n, based on NMEA format)
