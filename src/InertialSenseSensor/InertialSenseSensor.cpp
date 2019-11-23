@@ -103,7 +103,7 @@ protected:
 
 	
 	void handleInsMessage(ins_1_t* ins);
-	void handleGpsMessage(gps_nav_t* gps);
+	void handleGpsMessage(gps_pos_t* gps);
 	void handleImuMessage(dual_imu_t* imu);
 	void handleMAGMessage(magnetometer_t* mag);
 
@@ -201,7 +201,7 @@ void InertialSenseSensor::start()
 			LOG4CPP_ERROR(logger, "Failed to open serial port on com port COM3");
 		}
 		// stop all broadcasts on the device
-		messageSize = is_comm_stop_broadcasts(&comm);
+		messageSize = is_comm_stop_broadcasts_all_ports(&comm);
 		if (messageSize < 1)
 		{
 			LOG4CPP_ERROR(logger, "Failed to encode stop broadcasts message");
@@ -258,8 +258,8 @@ void InertialSenseSensor::startCapturing()
 		case _DID_IMU_DUAL:
 			handleImuMessage((dual_imu_t*)buffer);
 			break;
-		case _DID_GPS_NAV:
-			handleGpsMessage((gps_nav_t*)buffer);
+		case _DID_GPS1_POS:
+			handleGpsMessage((gps_pos_t*)buffer);
 			break;
 		case _DID_MAGNETOMETER_1:
 			handleMAGMessage((magnetometer_t*)buffer);
@@ -294,7 +294,7 @@ void InertialSenseSensor::handleInsMessage(ins_1_t* ins){
 	m_gyro_OutPort.send(Measurement::Rotation(ts, Math::Quaternion(ins->theta[0] * C_RAD2DEG_F, ins->theta[1] * C_RAD2DEG_F, ins->theta[2] * C_RAD2DEG_F)));
 */
 }
-void InertialSenseSensor::handleGpsMessage(/*Measurement::Timestamp utTime,*/gps_nav_t* gps){
+void InertialSenseSensor::handleGpsMessage(/*Measurement::Timestamp utTime,*/gps_pos_t* gps){
 
 }
 
