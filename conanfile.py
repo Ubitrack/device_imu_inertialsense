@@ -2,11 +2,11 @@ from conans import ConanFile, CMake, tools
 
 
 class UbitrackCoreConan(ConanFile):
-    name = "ubitrack_device_camera_realsense"
+    name = "ubitrack_device_inertialsense"
     version = "1.3.0"
 
-    description = "Ubitrack Device Camera realsense"
-    url = "https://github.com/Ubitrack/device_camera_realsense.git"
+    description = "Ubitrack Device Inertialsese IMU"
+    url = ""
     license = "GPL"
 
     short_paths = True
@@ -20,9 +20,7 @@ class UbitrackCoreConan(ConanFile):
     default_options = {
         "workspaceBuild" : False,
         "ubitrack_core:shared" : True,
-        "ubitrack_vision:shared" : True,
         "ubitrack_dataflow:shared" : True,
-        "librealsense:shared" : True,
     }
         
 
@@ -34,9 +32,8 @@ class UbitrackCoreConan(ConanFile):
         if self.options.workspaceBuild:
             userChannel = "local/dev"
         self.requires("ubitrack_core/%s@%s" % (self.version, userChannel))
-        self.requires("ubitrack_vision/%s@%s" % (self.version, userChannel))
         self.requires("ubitrack_dataflow/%s@%s" % (self.version, userChannel))
-        self.requires("librealsense/[>=2.25.0]@camposs/stable")
+        
        
 
     # def imports(self):
@@ -46,7 +43,6 @@ class UbitrackCoreConan(ConanFile):
        
     def build(self):
         cmake = CMake(self)
-        cmake.definitions["LIBREALSENSE_FILE_LIBNAME"] = self.deps_user_info["librealsense"].realsense_file_library_name
         cmake.configure()
         cmake.build()
         cmake.install()
