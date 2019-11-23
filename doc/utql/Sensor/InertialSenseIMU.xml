@@ -47,7 +47,7 @@
 					to compensate clock shift.</h:p>
 				</Description>
 			</Attribute>
-			<Attribute name="baudrate" default="3000000" xsi:type="IntAttributeDeclarationType" displayName="baudrate">
+			<Attribute name="baudrate" default="921600" xsi:type="IntAttributeDeclarationType" displayName="baudrate">
 				<Description>
 					<h:p>baudrate.</h:p>
 				</Description>
