@@ -196,18 +196,19 @@ void InertialSenseSensor::start()
 		// open serial, last parameter is a 1 which means a blocking read, you can set as 0 for non-blocking
 		// you can change the baudrate to a supported baud rate (IS_BAUDRATE_*), make sure to reboot the uINS
 		//  if you are changing baud rates, you only need to do this when you are changing baud rates.
-		if (!serialPortOpen(&serialPort, portName.c_str(), baudRate, 1))
+		if (!serialPortOpen(&serialPort, "COM5", IS_BAUDRATE_921600, 1))//(!serialPortOpen(&serialPort, portName.c_str(), baudRate, 1))
 		{
-			LOG4CPP_ERROR(logger, "Failed to open serial port on com port COM3");
+			LOG4CPP_ERROR(logger, std::strcat("Failed to open serial port on com port C", portName.c_str()));
 		}
+		LOG4CPP_INFO(logger, "Opened port");
 		// stop all broadcasts on the device
 		messageSize = is_comm_stop_broadcasts_all_ports(&comm);
 		if (messageSize < 1)
 		{
 			LOG4CPP_ERROR(logger, "Failed to encode stop broadcasts message");
-		
 		}
 		serialPortWrite(&serialPort, buffer, messageSize);
+		LOG4CPP_INFO(logger, "Stopped broadcasts");
 #if 0
 		// ask for INS message 20 times a second (period of 50 milliseconds).  Max rate is 500 times a second (2ms period).
 		messageSize = is_comm_get_data(&comm, _DID_INS_LLA_EULER_NED, 0, 0, 50);
@@ -225,8 +226,9 @@ void InertialSenseSensor::start()
 		}
 		serialPortWrite(&serialPort, buffer, messageSize);
 #endif
+#if 0
 		// ask for IMU data 10 times a second - this could be as high as 1000 times a second (a period of 1)
-		messageSize = is_comm_get_data(&comm, _DID_IMU_DUAL, 0, 0, (unsigned int)(1.f/freq*1000.f) );
+		messageSize = is_comm_get_data(&comm, _DID_IMU_DUAL, 0, 0, 1);// (unsigned int)(1.f / freq * 1000.f) );
 		if (messageSize < 1)
 		{
 			LOG4CPP_ERROR(logger, "Failed to encode get IMU message");
@@ -234,13 +236,23 @@ void InertialSenseSensor::start()
 		serialPortWrite(&serialPort, buffer, messageSize);
 
 		// ask for MAG message 10 times a second.  this could be as high as 1000 times a second (a period of 1)
-		messageSize = is_comm_get_data(&comm, _DID_MAGNETOMETER_1, 0, 0, (unsigned int)(1.f / freq * 1000.f));
+		messageSize = is_comm_get_data(&comm, _DID_MAGNETOMETER_1, 0, 0, 1);// (unsigned int)(1.f / freq * 1000.f));
 		if (messageSize < 1)
 		{
 			LOG4CPP_ERROR(logger, "Failed to encode get MAG message");
 		}
 		serialPortWrite(&serialPort, buffer, messageSize);
-		
+#endif
+#if 1
+		// Ask for GPS message at period of 200ms (200ms source period x 1).  Offset and size can be left at 0 unless you want to just pull a specific field from a data set.
+		messageSize = is_comm_get_data(&comm, _DID_GPS1_POS, 0, 0, 1);
+		if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
+		{
+			printf("Failed to encode and write get GPS message\r\n");
+		}
+		LOG4CPP_INFO(logger, "Requesting GPS raw");
+#endif
+
 		m_running = true;
 		m_bStop = false;
 		m_pThread.reset(new boost::thread(boost::bind(&InertialSenseSensor::startCapturing, this)));
@@ -251,7 +263,8 @@ void InertialSenseSensor::start()
 void InertialSenseSensor::startCapturing()
 {
 	
-	while ( (count = serialPortReadCharTimeout(&serialPort, &inByte, -1)) > 0)
+	// Read one byte with a 20 millisecond timeout
+	while ((count = serialPortReadCharTimeout(&serialPort, &inByte, 20)) > 0)
 	{
 		switch (is_comm_parse(&comm, inByte))
 		{
@@ -267,7 +280,8 @@ void InertialSenseSensor::startCapturing()
 		case _DID_INS_LLA_EULER_NED:
 			handleInsMessage((ins_1_t*)buffer);
 			break;
-		
+		default:
+			break;
 			// TODO: add other cases for other data ids that you care about
 		}
 	}
@@ -277,6 +291,7 @@ void InertialSenseSensor::stop()
 {
 	if (m_running)
 	{
+		LOG4CPP_INFO(logger, "Stopping requested");
 		m_running = false;
 		m_bStop = true;
 		if (m_pThread)
@@ -284,6 +299,7 @@ void InertialSenseSensor::stop()
 			m_pThread->join();
 		}
 	}
+	LOG4CPP_INFO(logger, "Stopping done");
 	Component::stop();
 }
 
@@ -295,7 +311,7 @@ void InertialSenseSensor::handleInsMessage(ins_1_t* ins){
 */
 }
 void InertialSenseSensor::handleGpsMessage(/*Measurement::Timestamp utTime,*/gps_pos_t* gps){
-
+	
 }
 
 void InertialSenseSensor::handleImuMessage(/*Measurement::Timestamp utTime,*/ dual_imu_t* imu){
