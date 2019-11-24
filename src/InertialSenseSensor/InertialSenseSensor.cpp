@@ -107,6 +107,11 @@ protected:
 	void handleImuMessage(dual_imu_t* imu);
 	void handleMAGMessage(magnetometer_t* mag);
 
+	bool set_configuration(serial_port_t *serialPort, is_comm_instance_t *comm);
+	bool stop_message_broadcasting(serial_port_t *serialPort, is_comm_instance_t *comm);
+	bool save_persistent_messages(serial_port_t *serialPort, is_comm_instance_t *comm);
+	bool enable_message_broadcasting_get_data(serial_port_t *serialPort, is_comm_instance_t *comm);
+
 	// shift timestamps (ms)
 	int m_timeOffset;
 
@@ -146,6 +151,93 @@ protected:
 	Dataflow::PushSupplier< Measurement::Rotation > m_gyro_outPortRAW;
   
 };
+
+bool InertialSenseSensor::set_configuration(serial_port_t *serialPort, is_comm_instance_t *comm)
+{
+	// Set INS output Euler rotation in radians to 90 degrees roll for mounting
+	float rotation[3] = { 90.0f*C_DEG2RAD_F, 0.0f, 0.0f };
+	int messageSize = is_comm_set_data(comm, _DID_FLASH_CONFIG, offsetof(nvm_flash_cfg_t, insRotation), sizeof(float) * 3, rotation);
+	if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+	{
+		LOG4CPP_ERROR(logger, "Failed to encode and write set INS rotation\r\n");
+		return false;
+	}
+
+	return true;
+}
+
+
+bool InertialSenseSensor::stop_message_broadcasting(serial_port_t *serialPort, is_comm_instance_t *comm)
+{
+	// Stop all broadcasts on the device
+	int messageSize = is_comm_stop_broadcasts_all_ports(comm);
+	if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+	{
+		LOG4CPP_ERROR(logger, "Failed to encode and write stop broadcasts message\r\n");
+		return false;
+	}
+	return true;
+}
+
+
+bool InertialSenseSensor::save_persistent_messages(serial_port_t *serialPort, is_comm_instance_t *comm)
+{
+	config_t cfg;
+	cfg.system = CFG_SYS_CMD_SAVE_PERSISTENT_MESSAGES;
+	cfg.invSystem = ~cfg.system;
+
+	int messageSize = is_comm_set_data(comm, DID_CONFIG, 0, sizeof(config_t), &cfg);
+	if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+	{
+		LOG4CPP_ERROR(logger, "Failed to write save persistent message\r\n");
+		return false;
+	}
+	return true;
+}
+
+
+bool InertialSenseSensor::enable_message_broadcasting_get_data(serial_port_t *serialPort, is_comm_instance_t *comm)
+{
+	// Ask for INS message w/ update 40ms period (4ms source period x 10).  Set data rate to zero to disable broadcast and pull a single packet.
+	int messageSize;
+	messageSize = is_comm_get_data(comm, _DID_INS_LLA_EULER_NED, 0, 0, 1);
+	if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+	{
+		LOG4CPP_ERROR(logger, "Failed to encode and write get INS message\r\n");
+		return false;
+	}
+
+#if 0
+	// Ask for GPS message at period of 200ms (200ms source period x 1).  Offset and size can be left at 0 unless you want to just pull a specific field from a data set.
+	messageSize = is_comm_get_data(comm, _DID_GPS1_POS, 0, 0, 1);
+	if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+	{
+		LOG4CPP_ERROR(logger, "Failed to encode and write get GPS message\r\n");
+		return false;
+	}
+#endif
+
+#if 0
+	// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
+	messageSize = is_comm_get_data(comm, _DID_IMU_DUAL, 0, 0, 100);
+	if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+	{
+		LOG4CPP_ERROR(logger, "Failed to encode and write get IMU message\r\n");
+		return false;
+	}
+#endif
+#if 0
+	// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
+	messageSize = is_comm_get_data(comm, _DID_MAGNETOMETER_1, 0, 0, 100);
+	if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+	{
+		LOG4CPP_ERROR(logger, "Failed to encode and write get MAG message\r\n");
+		return false;
+	}
+#endif
+
+	return true;
+}
 
 
 
@@ -193,64 +285,30 @@ InertialSenseSensor::~InertialSenseSensor()
 void InertialSenseSensor::start()
 {
 	if ( !m_running ) {
-		// open serial, last parameter is a 1 which means a blocking read, you can set as 0 for non-blocking
+		
+		// Open serial, last parameter is a 1 which means a blocking read, you can set as 0 for non-blocking
 		// you can change the baudrate to a supported baud rate (IS_BAUDRATE_*), make sure to reboot the uINS
 		//  if you are changing baud rates, you only need to do this when you are changing baud rates.
-		if (!serialPortOpen(&serialPort, "COM5", IS_BAUDRATE_921600, 1))//(!serialPortOpen(&serialPort, portName.c_str(), baudRate, 1))
-		{
-			LOG4CPP_ERROR(logger, std::strcat("Failed to open serial port on com port C", portName.c_str()));
-		}
-		LOG4CPP_INFO(logger, "Opened port");
-		// stop all broadcasts on the device
-		messageSize = is_comm_stop_broadcasts_all_ports(&comm);
-		if (messageSize < 1)
-		{
-			LOG4CPP_ERROR(logger, "Failed to encode stop broadcasts message");
-		}
-		serialPortWrite(&serialPort, buffer, messageSize);
-		LOG4CPP_INFO(logger, "Stopped broadcasts");
-#if 0
-		// ask for INS message 20 times a second (period of 50 milliseconds).  Max rate is 500 times a second (2ms period).
-		messageSize = is_comm_get_data(&comm, _DID_INS_LLA_EULER_NED, 0, 0, 50);
-		if (messageSize < 1)
-		{
-			LOG4CPP_ERROR(logger, "Failed to encode get INS message");
-		}
-		serialPortWrite(&serialPort, buffer, messageSize);
+		if (!serialPortOpen(&serialPort, portName.c_str(), baudRate, 1))
+			LOG4CPP_ERROR(logger, strcat("Failed to open serial port on com port ", portName.c_str()));
 
-		// ask for gps message 5 times a second (period of 200 milliseconds) - offset and size can be left at 0 unless you want to just pull a specific field from a data set
-		messageSize = is_comm_get_data(&comm, _DID_GPS_NAV, 0, 0, 200);
-		if (messageSize < 1)
-		{
-			LOG4CPP_ERROR(logger, "Failed to encode get GPS message");
-		}
-		serialPortWrite(&serialPort, buffer, messageSize);
-#endif
-#if 0
-		// ask for IMU data 10 times a second - this could be as high as 1000 times a second (a period of 1)
-		messageSize = is_comm_get_data(&comm, _DID_IMU_DUAL, 0, 0, 1);// (unsigned int)(1.f / freq * 1000.f) );
-		if (messageSize < 1)
-		{
-			LOG4CPP_ERROR(logger, "Failed to encode get IMU message");
-		}
-		serialPortWrite(&serialPort, buffer, messageSize);
+		// STEP 4: Stop any message broadcasting
+		if (!stop_message_broadcasting(&serialPort, &comm))
+			return;
 
-		// ask for MAG message 10 times a second.  this could be as high as 1000 times a second (a period of 1)
-		messageSize = is_comm_get_data(&comm, _DID_MAGNETOMETER_1, 0, 0, 1);// (unsigned int)(1.f / freq * 1000.f));
-		if (messageSize < 1)
-		{
-			LOG4CPP_ERROR(logger, "Failed to encode get MAG message");
-		}
-		serialPortWrite(&serialPort, buffer, messageSize);
+#if 0	// STEP 5: Set configuration
+		if (!set_configuration(&serialPort, &comm))
+			return;
 #endif
-#if 1
-		// Ask for GPS message at period of 200ms (200ms source period x 1).  Offset and size can be left at 0 unless you want to just pull a specific field from a data set.
-		messageSize = is_comm_get_data(&comm, _DID_GPS1_POS, 0, 0, 1);
-		if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
-		{
-			printf("Failed to encode and write get GPS message\r\n");
-		}
-		LOG4CPP_INFO(logger, "Requesting GPS raw");
+
+
+		// STEP 6: Enable message broadcasting
+		if (!enable_message_broadcasting_get_data(&serialPort, &comm))
+			return;
+
+
+#if 0   // STEP 7: (Optional) Save currently enabled streams as persistent messages enabled after reboot
+		save_persistent_messages(&serialPort, &comm);
 #endif
 
 		m_running = true;
@@ -264,25 +322,26 @@ void InertialSenseSensor::startCapturing()
 {
 	
 	// Read one byte with a 20 millisecond timeout
-	while ((count = serialPortReadCharTimeout(&serialPort, &inByte, 20)) > 0)
+	while (!m_bStop)
 	{
-		switch (is_comm_parse(&comm, inByte))
+		if ((count = serialPortReadCharTimeout(&serialPort, &inByte, 20)) > 0)
 		{
-		case _DID_IMU_DUAL:
-			handleImuMessage((dual_imu_t*)buffer);
-			break;
-		case _DID_GPS1_POS:
-			handleGpsMessage((gps_pos_t*)buffer);
-			break;
-		case _DID_MAGNETOMETER_1:
-			handleMAGMessage((magnetometer_t*)buffer);
-			break;
-		case _DID_INS_LLA_EULER_NED:
-			handleInsMessage((ins_1_t*)buffer);
-			break;
-		default:
-			break;
+			switch (is_comm_parse(&comm, inByte))
+			{
+			case _DID_IMU_DUAL:
+				handleImuMessage((dual_imu_t*)buffer);
+				break;
+			case _DID_GPS1_POS:
+				handleGpsMessage((gps_pos_t*)buffer);
+				break;
+			case _DID_MAGNETOMETER_1:
+				handleMAGMessage((magnetometer_t*)buffer);
+				break;
+			case _DID_INS_LLA_EULER_NED:
+				handleInsMessage((ins_1_t*)buffer);
+				break;
 			// TODO: add other cases for other data ids that you care about
+			}
 		}
 	}
 }
@@ -291,7 +350,6 @@ void InertialSenseSensor::stop()
 {
 	if (m_running)
 	{
-		LOG4CPP_INFO(logger, "Stopping requested");
 		m_running = false;
 		m_bStop = true;
 		if (m_pThread)
@@ -299,7 +357,6 @@ void InertialSenseSensor::stop()
 			m_pThread->join();
 		}
 	}
-	LOG4CPP_INFO(logger, "Stopping done");
 	Component::stop();
 }
 
@@ -309,6 +366,7 @@ void InertialSenseSensor::handleInsMessage(ins_1_t* ins){
 	m_acc_OutPort.send(macc);
 	m_gyro_OutPort.send(Measurement::Rotation(ts, Math::Quaternion(ins->theta[0] * C_RAD2DEG_F, ins->theta[1] * C_RAD2DEG_F, ins->theta[2] * C_RAD2DEG_F)));
 */
+	LOG4CPP_INFO(logger, "YAAAAAY");
 }
 void InertialSenseSensor::handleGpsMessage(/*Measurement::Timestamp utTime,*/gps_pos_t* gps){
 	
@@ -320,14 +378,12 @@ void InertialSenseSensor::handleImuMessage(/*Measurement::Timestamp utTime,*/ du
 	Measurement::Vector3D macc(ts, Math::Vector3d(imu->I[0].acc[0], imu->I[0].acc[1], imu->I[0].acc[2]));
 	m_acc_OutPort.send(macc);
 	m_gyro_OutPort.send(mgyro);
-
 }
 void InertialSenseSensor::handleMAGMessage(magnetometer_t* mag){
 
 	Measurement::Timestamp ts = Measurement::now();// ins->timeOfWeek;
 
 	m_mag_OutPort.send(Measurement::Vector3D(ts, Math::Vector3d(mag->mag[0], mag->mag[1], mag->mag[2])));
-
 }
 } } // namespace Ubitrack::Components
 
