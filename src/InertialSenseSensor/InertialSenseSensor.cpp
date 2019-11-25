@@ -146,7 +146,7 @@ namespace Ubitrack {
 			/** timestamp of last frame */
 			double m_lastTime;
 
-			float m_rotationOffset[3];
+			float m_rotationOffset[3] = { 0.0f, 0.0f, 0.0f };
 
 
 			// the ports
@@ -167,7 +167,7 @@ namespace Ubitrack {
 			int messageSize = is_comm_set_data(&comm, _DID_FLASH_CONFIG, offsetof(nvm_flash_cfg_t, insRotation), sizeof(float) * 3, m_rotationOffset);
 			if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
 			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write set INS rotation\r\n");
+				LOG4CPP_ERROR(logger, "Failed to encode and write set INS rotation");
 				return false;
 			}
 			return true;
@@ -180,7 +180,7 @@ namespace Ubitrack {
 			int messageSize = is_comm_stop_broadcasts_all_ports(&comm);
 			if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
 			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write stop broadcasts message\r\n");
+				LOG4CPP_ERROR(logger, "Failed to encode and write stop broadcasts message");
 				return false;
 			}
 			return true;
@@ -196,7 +196,7 @@ namespace Ubitrack {
 			int messageSize = is_comm_set_data(&comm, DID_CONFIG, 0, sizeof(config_t), &cfg);
 			if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
 			{
-				LOG4CPP_ERROR(logger, "Failed to write save persistent message\r\n");
+				LOG4CPP_ERROR(logger, "Failed to write save persistent message");
 				return false;
 			}
 			return true;
@@ -212,6 +212,7 @@ namespace Ubitrack {
 				LOG4CPP_ERROR(logger, "Failed to encode and write get message id " << std::to_string(datastruct));
 				return false;
 			}
+			return true;
 		}
 
 		InertialSenseSensor::InertialSenseSensor(const std::string& sName, boost::shared_ptr< Graph::UTQLSubgraph > subgraph)
@@ -219,7 +220,6 @@ namespace Ubitrack {
 			, m_timeOffset(0)
 			, m_lastTime(-1e10)
 			, m_bStop(true)
-			, m_rotationOffset({ 0.0, 0.0, 0.0 })
 			, m_acc_OutPort("acc_OutPort", *this)
 			, m_gyro_OutPort("gyro_OutPort", *this)
 			, m_mag_OutPort1("mag_OutPort1", *this)
