@@ -29,13 +29,34 @@
 				<Attribute name="type" value="RotationVelocity" xsi:type="EnumAttributeReferenceType"/>
 				<Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
 			</Edge>
-			<Edge name="mag_OutPort" source="IMU"	destination="IMU2" displayName="Magnetometer">
+			<Edge name="mag_OutPort1" source="IMU"	destination="IMU2" displayName="Magnetometer1">
 				<Description>
-					<h:p>Magnetometer</h:p>
+					<h:p>Magnetometer1</h:p>
 				</Description>
 				<Attribute name="type" value="3DPosition" xsi:type="EnumAttributeReferenceType"/>
 				<Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
 			</Edge>
+      <Edge name="mag_OutPort2" source="IMU"	destination="IMU2" displayName="Magnetometer2">
+        <Description>
+          <h:p>Magnetometer2</h:p>
+        </Description>
+        <Attribute name="type" value="3DPosition" xsi:type="EnumAttributeReferenceType"/>
+        <Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
+      </Edge>
+      <Edge name="m_ecef_q_Pose" source="IMU"	destination="IMU2" displayName="ECEF Pose">
+        <Description>
+          <h:p>ECEF Pose</h:p>
+        </Description>
+        <Attribute name="type" value="6D" xsi:type="EnumAttributeReferenceType"/>
+        <Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
+      </Edge>
+      <Edge name="m_ecef_q_Velocity" source="IMU"	destination="IMU2" displayName="ECEF Velocity">
+        <Description>
+          <h:p>ECEF Velocity</h:p>
+        </Description>
+        <Attribute name="type" value="3DPosition" xsi:type="EnumAttributeReferenceType"/>
+        <Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
+      </Edge>
 		</Output>
 
 		<DataflowConfiguration>
