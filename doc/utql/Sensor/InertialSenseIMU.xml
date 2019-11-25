@@ -36,13 +36,6 @@
 				<Attribute name="type" value="3DPosition" xsi:type="EnumAttributeReferenceType"/>
 				<Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
 			</Edge>
-      <Edge name="mag_OutPort2" source="IMU"	destination="IMU2" displayName="Magnetometer2">
-        <Description>
-          <h:p>Magnetometer2</h:p>
-        </Description>
-        <Attribute name="type" value="3DPosition" xsi:type="EnumAttributeReferenceType"/>
-        <Attribute name="mode" value="push" xsi:type="EnumAttributeReferenceType"/>
-      </Edge>
       <Edge name="m_ecef_q_Pose" source="IMU"	destination="IMU2" displayName="ECEF Pose">
         <Description>
           <h:p>ECEF Pose</h:p>
@@ -83,6 +76,26 @@
 					<h:p>port.</h:p>
 				</Description>
 			</Attribute>
+      <Attribute name="rotationOffset" displayName="Rotation offset(Euler, Deg)" xsi:type="DoubleArrayAttributeDeclarationType">
+        <Description>
+          <p xmlns="http://www.w3.org/1999/xhtml">Rotation offset in Euler angles, degrees</p>
+        </Description>
+        <DoubleValue name="x" displayName="x" default="0.0">
+          <Description>
+            <p xmlns="http://www.w3.org/1999/xhtml">x component</p>
+          </Description>
+        </DoubleValue>
+        <DoubleValue name="y" displayName="y" default="0.0">
+          <Description>
+            <p xmlns="http://www.w3.org/1999/xhtml">y component</p>
+          </Description>
+        </DoubleValue>
+        <DoubleValue name="z" displayName="z" default="0.0">
+          <Description>
+            <p xmlns="http://www.w3.org/1999/xhtml">z component</p>
+          </Description>
+        </DoubleValue>
+      </Attribute>
 			
 		</DataflowConfiguration>
 	</Pattern>

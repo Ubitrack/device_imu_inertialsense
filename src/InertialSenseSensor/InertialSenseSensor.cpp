@@ -111,10 +111,10 @@ namespace Ubitrack {
 			void handleMAG1Message(magnetometer_t* mag);
 			void handleMAG2Message(magnetometer_t* mag);
 
-			bool set_configuration(serial_port_t *serialPort, is_comm_instance_t *comm);
-			bool stop_message_broadcasting(serial_port_t *serialPort, is_comm_instance_t *comm);
-			bool save_persistent_messages(serial_port_t *serialPort, is_comm_instance_t *comm);
-			bool enable_message_broadcasting_get_data(serial_port_t *serialPort, is_comm_instance_t *comm);
+			bool set_configuration();
+			bool stop_message_broadcasting();
+			bool save_persistent_messages();
+			bool enable_message_broadcasting_get_data(uint32_t datastruct, uint32_t periodMultiple);
 
 			// shift timestamps (ms)
 			int m_timeOffset;
@@ -146,38 +146,39 @@ namespace Ubitrack {
 			/** timestamp of last frame */
 			double m_lastTime;
 
+			float m_rotationOffset[3];
+
 
 			// the ports
 			Dataflow::PushSupplier< Measurement::Vector3D > m_acc_OutPort;
 			Dataflow::PushSupplier< Measurement::RotationVelocity> m_gyro_OutPort;
 			Dataflow::PushSupplier< Measurement::Vector3D > m_mag_OutPort1;
-			Dataflow::PushSupplier< Measurement::Vector3D > m_mag_OutPort2;
 			Dataflow::PushSupplier< Measurement::Pose > m_ecef_q_Pose;
 			Dataflow::PushSupplier< Measurement::Vector3D > m_ecef_q_Velocity;
 
 
 		};
 
-		bool InertialSenseSensor::set_configuration(serial_port_t *serialPort, is_comm_instance_t *comm)
+		bool InertialSenseSensor::set_configuration()
 		{
-			// Set INS output Euler rotation in radians to 90 degrees roll for mounting
-			float rotation[3] = { 90.0f*C_DEG2RAD_F, 0.0f, 0.0f };
-			int messageSize = is_comm_set_data(comm, _DID_FLASH_CONFIG, offsetof(nvm_flash_cfg_t, insRotation), sizeof(float) * 3, rotation);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+			// Set INS output Euler rotation in radians for mounting
+			for (int i = 0; i < 3; i++)
+				m_rotationOffset[i] *= C_DEG2RAD_F;
+			int messageSize = is_comm_set_data(&comm, _DID_FLASH_CONFIG, offsetof(nvm_flash_cfg_t, insRotation), sizeof(float) * 3, m_rotationOffset);
+			if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
 			{
 				LOG4CPP_ERROR(logger, "Failed to encode and write set INS rotation\r\n");
 				return false;
 			}
-
 			return true;
 		}
 
 
-		bool InertialSenseSensor::stop_message_broadcasting(serial_port_t *serialPort, is_comm_instance_t *comm)
+		bool InertialSenseSensor::stop_message_broadcasting()
 		{
 			// Stop all broadcasts on the device
-			int messageSize = is_comm_stop_broadcasts_all_ports(comm);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+			int messageSize = is_comm_stop_broadcasts_all_ports(&comm);
+			if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
 			{
 				LOG4CPP_ERROR(logger, "Failed to encode and write stop broadcasts message\r\n");
 				return false;
@@ -186,14 +187,14 @@ namespace Ubitrack {
 		}
 
 
-		bool InertialSenseSensor::save_persistent_messages(serial_port_t *serialPort, is_comm_instance_t *comm)
+		bool InertialSenseSensor::save_persistent_messages()
 		{
 			config_t cfg;
 			cfg.system = CFG_SYS_CMD_SAVE_PERSISTENT_MESSAGES;
 			cfg.invSystem = ~cfg.system;
 
-			int messageSize = is_comm_set_data(comm, DID_CONFIG, 0, sizeof(config_t), &cfg);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+			int messageSize = is_comm_set_data(&comm, DID_CONFIG, 0, sizeof(config_t), &cfg);
+			if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
 			{
 				LOG4CPP_ERROR(logger, "Failed to write save persistent message\r\n");
 				return false;
@@ -202,93 +203,26 @@ namespace Ubitrack {
 		}
 
 
-		bool InertialSenseSensor::enable_message_broadcasting_get_data(serial_port_t *serialPort, is_comm_instance_t *comm)
+		bool InertialSenseSensor::enable_message_broadcasting_get_data(uint32_t datastruct, uint32_t baseFreqDivider)
 		{
-#if 0
 			// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
-			messageSize = is_comm_get_data(comm, _DID_IMU_DUAL, 0, 0, 100);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
+			messageSize = is_comm_get_data(&comm, datastruct, 0, 0, baseFreqDivider);
+			if (messageSize != serialPortWrite(&serialPort, comm.buffer, messageSize))
 			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write get IMU message\r\n");
+				LOG4CPP_ERROR(logger, "Failed to encode and write get message id " << std::to_string(datastruct));
 				return false;
 			}
-#endif
-
-#if 1
-			// Ask for GPS message at period of 200ms (200ms source period x 1).  Offset and size can be left at 0 unless you want to just pull a specific field from a data set.
-			messageSize = is_comm_get_data(comm, _DID_GPS1_POS, 0, 0, 1);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
-			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write get GPS message\r\n");
-				return false;
-			}
-#endif
-
-#if 0
-			// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
-			messageSize = is_comm_get_data(comm, _DID_MAGNETOMETER_1, 0, 0, 100);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
-			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write get MAG message\r\n");
-				return false;
-			}
-#endif
-
-#if 0
-			// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
-			messageSize = is_comm_get_data(comm, _DID_MAGNETOMETER_2, 0, 0, 100);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
-			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write get MAG message\r\n");
-				return false;
-			}
-#endif
-
-#if 0
-			// Ask for INS message w/ update 40ms period (4ms source period x 10).  Set data rate to zero to disable broadcast and pull a single packet.
-			int messageSize;
-			messageSize = is_comm_get_data(comm, _DID_INS_LLA_EULER_NED, 0, 0, 1);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
-			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write get INS message\r\n");
-				return false;
-			
-#endif
-
-#if 0
-			// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
-			messageSize = is_comm_get_data(comm, _DID_INS_LLA_QN2B, 0, 0, 100);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
-			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write get MAG message\r\n");
-				return false;
-			}
-#endif
-
-#if 0
-			// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
-			messageSize = is_comm_get_data(comm, _DID_INS_ECEF_QE2B, 0, 0, 100);
-			if (messageSize != serialPortWrite(serialPort, comm->buffer, messageSize))
-			{
-				LOG4CPP_ERROR(logger, "Failed to encode and write get MAG message\r\n");
-				return false;
-			}
-#endif
-
-			return true;
 		}
-
-
 
 		InertialSenseSensor::InertialSenseSensor(const std::string& sName, boost::shared_ptr< Graph::UTQLSubgraph > subgraph)
 			: Dataflow::Component(sName)
 			, m_timeOffset(0)
 			, m_lastTime(-1e10)
 			, m_bStop(true)
+			, m_rotationOffset({ 0.0, 0.0, 0.0 })
 			, m_acc_OutPort("acc_OutPort", *this)
 			, m_gyro_OutPort("gyro_OutPort", *this)
 			, m_mag_OutPort1("mag_OutPort1", *this)
-			, m_mag_OutPort2("mag_OutPort2", *this)
 			, m_ecef_q_Pose("m_ecef_q_Pose", *this)
 			, m_ecef_q_Velocity("m_ecef_q_Velocity", *this)
 		{
@@ -296,6 +230,20 @@ namespace Ubitrack {
 			subgraph->m_DataflowAttributes.getAttributeData("frequency", freq);
 			subgraph->m_DataflowAttributes.getAttributeData("baudrate", baudRate);
 			portName = subgraph->m_DataflowAttributes.getAttributeString("port");
+			if (subgraph->m_DataflowAttributes.hasAttribute("rotationOffset"))
+			{
+				try
+				{
+					std::string rgbaChars = subgraph->m_DataflowAttributes.getAttribute("rotationOffset").getText();
+					std::istringstream rgbaString(rgbaChars);
+					for (int i = 0; i < 3; ++i)
+						rgbaString >> m_rotationOffset[i];
+				}
+				catch (...)
+				{
+					UBITRACK_THROW("Invalid value for attribute 'rotationOffset'");
+				}
+			}
 
 			// very important - the serial port must be initialized to zeros
 			memset(&serialPort, 0, sizeof(serialPort));
@@ -313,44 +261,43 @@ namespace Ubitrack {
 			//  case, you do not need to include serialPort.h/.c and serialPortPlatform.h/.c in your project.
 			serialPortPlatformInit(&serialPort);
 
+			// Open serial, last parameter is a 1 which means a blocking read, you can set as 0 for non-blocking
+			// you can change the baudrate to a supported baud rate (IS_BAUDRATE_*), make sure to reboot the uINS
+			//  if you are changing baud rates, you only need to do this when you are changing baud rates.
+			if (!serialPortOpen(&serialPort, portName.c_str(), baudRate, 1))
+				LOG4CPP_ERROR(logger, "Failed to open serial port on com port " << portName);
+
+			// Stop any message broadcasting
+			if (!stop_message_broadcasting())
+				return;
+
+			// Set configuration
+			if (!set_configuration())
+				return;
 		}
 
-
-
-		InertialSenseSensor::~InertialSenseSensor()
-		{
-
-		}
-
+		InertialSenseSensor::~InertialSenseSensor() {}
 
 		void InertialSenseSensor::start()
 		{
 			if (!m_running) {
+				// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
+				enable_message_broadcasting_get_data(_DID_IMU_DUAL, 100);
 
-				// Open serial, last parameter is a 1 which means a blocking read, you can set as 0 for non-blocking
-				// you can change the baudrate to a supported baud rate (IS_BAUDRATE_*), make sure to reboot the uINS
-				//  if you are changing baud rates, you only need to do this when you are changing baud rates.
-				if (!serialPortOpen(&serialPort, portName.c_str(), baudRate, 1))
-					LOG4CPP_ERROR(logger, strcat("Failed to open serial port on com port ", portName.c_str()));
+				// Ask for GPS message at period of 200ms (200ms source period x 1).  Offset and size can be left at 0 unless you want to just pull a specific field from a data set.
+				enable_message_broadcasting_get_data(_DID_GPS1_POS, 1);
 
-				// STEP 4: Stop any message broadcasting
-				if (!stop_message_broadcasting(&serialPort, &comm))
-					return;
+				// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
+				enable_message_broadcasting_get_data(_DID_MAGNETOMETER_1, 100);
 
-#if 0			// STEP 5: Set configuration
-				if (!set_configuration(&serialPort, &comm))
-					return;
-#endif
+				// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
+				enable_message_broadcasting_get_data(_DID_INS_LLA_EULER_NED, 100);
 
+				// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
+				enable_message_broadcasting_get_data(_DID_INS_LLA_QN2B, 100);
 
-				// STEP 6: Enable message broadcasting
-				if (!enable_message_broadcasting_get_data(&serialPort, &comm))
-					return;
-
-
-#if 0			// STEP 7: (Optional) Save currently enabled streams as persistent messages enabled after reboot
-				save_persistent_messages(&serialPort, &comm);
-#endif
+				// Ask for IMU message at period of 100ms (1ms source period x 100).  This could be as high as 1000 times a second (period multiple of 1)
+				enable_message_broadcasting_get_data(_DID_INS_ECEF_QE2B, 100);
 
 				m_running = true;
 				m_bStop = false;
@@ -361,7 +308,6 @@ namespace Ubitrack {
 
 		void InertialSenseSensor::startCapturing()
 		{
-
 			// Read one byte with a 20 millisecond timeout
 			while (!m_bStop)
 			{
@@ -376,9 +322,6 @@ namespace Ubitrack {
 						handleGpsMessage((gps_pos_t*)buffer);
 						break;
 					case _DID_MAGNETOMETER_1:
-						handleMAG1Message((magnetometer_t*)buffer);
-						break;
-					case _DID_MAGNETOMETER_2:
 						handleMAG1Message((magnetometer_t*)buffer);
 						break;
 					case _DID_INS_LLA_EULER_NED:
@@ -447,16 +390,10 @@ namespace Ubitrack {
 			Measurement::Timestamp ts = Measurement::now();// ins->timeOfWeek;
 			m_mag_OutPort1.send(Measurement::Vector3D(ts, Math::Vector3d(mag->mag[0], mag->mag[1], mag->mag[2])));
 		}
-
-		void InertialSenseSensor::handleMAG2Message(magnetometer_t* mag) {
-			Measurement::Timestamp ts = Measurement::now();// ins->timeOfWeek;
-			m_mag_OutPort2.send(Measurement::Vector3D(ts, Math::Vector3d(mag->mag[0], mag->mag[1], mag->mag[2])));
-		}
-
 	}
 } // namespace Ubitrack::Components
 
-UBITRACK_REGISTER_COMPONENT( Dataflow::ComponentFactory* const cf ) {
+UBITRACK_REGISTER_COMPONENT( Dataflow::ComponentFactory* const cf )
+{
 	cf->registerComponent< Ubitrack::Drivers::InertialSenseSensor > ( "InertialSenseSensor" );
-
 }
