@@ -1,10 +1,10 @@
-device_camera_realsense
+device_imu_inertialsense
 ==============
-This is the Ubitrack device_camera_realsense submodule.
+This is the Ubitrack device_imu_inertialsense submodule.
 
 Description
 ----------
-The device_camera_realsense contains components for video capturing with the Pointgrey realsense SDK.
+The device_imu_inertialsense contains components for imu data aquisition using the InertialSenseSDK.
 
 ## For Users: Use this package
 
@@ -13,7 +13,7 @@ The device_camera_realsense contains components for video capturing with the Poi
 If you handle multiple dependencies in your project is better to add a *conanfile.txt*
 
     [requires]
-    ubitrack_device_camera_realsense/1.3.0@ubitrack/stable
+    ubitrack_device_imu_inertialsense/1.3.0@ubitrack/stable
 
     [generators]
     cmake
