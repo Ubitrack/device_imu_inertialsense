@@ -349,6 +349,8 @@ namespace Ubitrack {
 				{
 					m_pThread->join();
 				}
+				// Stop any message broadcasting
+				stop_message_broadcasting()
 			}
 			Component::stop();
 		}
