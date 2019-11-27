@@ -41,4 +41,4 @@ The following command both runs all the steps of the conan file, and publishes t
 
 ## Upload
 
-    $ conan upload -r camp ubitrack_device_camera_realsense/1.3.0@ubitrack/stable
+    $ conan upload -r camp ubitrack_device_imu_inertialsense/1.3.0@ubitrack/stable
